@@ -1,0 +1,64 @@
+apiVersion: apps/v1
+kind: Deployment
+
+metadata:
+  name: hello-service
+
+spec:
+  # 要求 Kubernetes 始终维持三个 Pod
+  replicas: 3
+
+  selector:
+    matchLabels:
+      app: hello-service
+
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 0
+      maxSurge: 1
+
+  template:
+    metadata:
+      labels:
+        app: hello-service
+
+    spec:
+      containers:
+        - name: hello-service
+
+          # 第一次 GitHub Actions 执行后，会自动替换这一行
+          image: ghcr.io/placeholder/k8s_practice:bootstrap
+
+          imagePullPolicy: IfNotPresent
+
+          ports:
+            - name: http
+              containerPort: 8080
+
+          readinessProbe:
+            httpGet:
+              path: /actuator/health
+              port: 8080
+            initialDelaySeconds: 10
+            periodSeconds: 5
+            timeoutSeconds: 2
+            failureThreshold: 6
+
+          livenessProbe:
+            httpGet:
+              path: /actuator/health
+              port: 8080
+            initialDelaySeconds: 30
+            periodSeconds: 10
+            timeoutSeconds: 2
+            failureThreshold: 3
+
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+
+            limits:
+              cpu: 500m
+              memory: 512Mi
