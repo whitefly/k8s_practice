@@ -22,7 +22,7 @@ public class HelloController {
 
     private Map<String, String> response() {
         Map<String, String> result = new LinkedHashMap<>();
-        result.put("message", "Hello World Version 2");
+        result.put("message", "Hello World Version 3");
         result.put("pod", System.getenv().getOrDefault("HOSTNAME", "local"));
         result.put("time", Instant.now().toString());
         return result;
