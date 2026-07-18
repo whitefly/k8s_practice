@@ -8,6 +8,13 @@ spec:
   # 要求 Kubernetes 始终维持三个 Pod
   replicas: 3
 
+  # 保留最近 5 个版本对应的 ReplicaSet
+  revisionHistoryLimit: 5
+  # 120 秒内发布没有进展，标记为发布失败
+  progressDeadlineSeconds: 120
+  # Pod Ready 后持续稳定 10 秒，才算真正可用
+  minReadySeconds: 10
+
   selector:
     matchLabels:
       app: hello-service
