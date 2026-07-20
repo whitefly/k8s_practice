@@ -12,40 +12,18 @@
     </parent>
 
     <groupId>com.example</groupId>
-    <artifactId>hello-demo</artifactId>
+    <artifactId>k8s-practice-parent</artifactId>
     <version>0.0.1-SNAPSHOT</version>
-    <name>hello-demo</name>
-    <description>Simple Spring Boot hello world project</description>
+    <packaging>pom</packaging>
+    <name>k8s-practice-parent</name>
+    <description>Parent project for hello service and git console</description>
+
+    <modules>
+        <module>hello-service</module>
+        <module>git-console</module>
+    </modules>
 
     <properties>
         <java.version>1.8</java.version>
     </properties>
-
-    <dependencies>
-        <dependency>
-            <groupId>org.springframework.boot</groupId>
-            <artifactId>spring-boot-starter-web</artifactId>
-        </dependency>
-
-        <dependency>
-            <groupId>org.springframework.boot</groupId>
-            <artifactId>spring-boot-starter-test</artifactId>
-            <scope>test</scope>
-        </dependency>
-
-        <!-- 为 Kubernetes 健康检查提供 /actuator/health -->
-        <dependency>
-            <groupId>org.springframework.boot</groupId>
-            <artifactId>spring-boot-starter-actuator</artifactId>
-        </dependency>
-    </dependencies>
-
-    <build>
-        <plugins>
-            <plugin>
-                <groupId>org.springframework.boot</groupId>
-                <artifactId>spring-boot-maven-plugin</artifactId>
-            </plugin>
-        </plugins>
-    </build>
 </project>

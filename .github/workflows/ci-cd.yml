@@ -4,10 +4,11 @@ on:
   push:
     branches:
       - main
-
-    # GitHub Actions 自己更新 k8s 文件时，不重复构建镜像
-    paths-ignore:
-      - "k8s/**"
+    paths:
+      - "hello-service/**"
+      - "pom.xml"
+      - "Dockerfile"
+      - ".github/workflows/ci-cd.yml"
 
   # 允许在 GitHub 页面手动运行
   workflow_dispatch:
@@ -35,7 +36,7 @@ jobs:
           cache: maven
 
       - name: Build Spring Boot application
-        run: mvn --batch-mode clean package
+        run: mvn --batch-mode -pl hello-service -am clean package
 
       - name: Generate image name and tag
         id: vars

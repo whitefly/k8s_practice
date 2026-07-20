@@ -1,0 +1,209 @@
+name: Branch Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      release_id:
+        description: "Release batch id from git-console"
+        required: true
+        type: string
+      environment:
+        description: "Target environment"
+        required: true
+        type: string
+      base_branch:
+        description: "Base branch used to create deploy branch"
+        required: true
+        default: "main"
+        type: string
+      deploy_branch:
+        description: "Deploy branch to create"
+        required: true
+        type: string
+      target_branches:
+        description: "Comma-separated feature branches"
+        required: true
+        type: string
+
+permissions:
+  contents: write
+  deployments: write
+
+jobs:
+  prepare-deploy-branch:
+    runs-on: ubuntu-latest
+    env:
+      GITHUB_API_URL: ${{ github.api_url }}/repos/${{ github.repository }}
+      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ inputs.base_branch }}
+          fetch-depth: 0
+
+      - name: Configure git
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+      - name: Create deploy branch from base
+        env:
+          BASE_BRANCH: ${{ inputs.base_branch }}
+          DEPLOY_BRANCH: ${{ inputs.deploy_branch }}
+        run: |
+          git fetch origin "${BASE_BRANCH}"
+          git checkout -B "${DEPLOY_BRANCH}" "origin/${BASE_BRANCH}"
+
+      - name: Merge target feature branches
+        env:
+          TARGET_BRANCHES: ${{ inputs.target_branches }}
+          DEPLOY_BRANCH: ${{ inputs.deploy_branch }}
+        run: |
+          if [ -z "${TARGET_BRANCHES}" ]; then
+            echo "target_branches is empty"
+            exit 1
+          fi
+
+          IFS=',' read -r -a BRANCH_ARRAY <<< "${TARGET_BRANCHES}"
+          for raw_branch in "${BRANCH_ARRAY[@]}"; do
+            branch="$(echo "${raw_branch}" | xargs)"
+            if [ -z "${branch}" ]; then
+              continue
+            fi
+            echo "Merging ${branch} into ${DEPLOY_BRANCH}"
+            git fetch origin "${branch}"
+            git merge --no-ff "origin/${branch}" -m "merge ${branch} into ${DEPLOY_BRANCH}"
+          done
+
+      - name: Push deploy branch
+        env:
+          DEPLOY_BRANCH: ${{ inputs.deploy_branch }}
+        run: |
+          git push origin "${DEPLOY_BRANCH}"
+
+      - name: Create deployment
+        id: create_deployment
+        env:
+          RELEASE_ID: ${{ inputs.release_id }}
+          ENVIRONMENT: ${{ inputs.environment }}
+          DEPLOY_BRANCH: ${{ inputs.deploy_branch }}
+          TARGET_BRANCHES: ${{ inputs.target_branches }}
+        run: |
+          payload="$(jq -n \
+            --arg ref "${DEPLOY_BRANCH}" \
+            --arg environment "${ENVIRONMENT}" \
+            --arg release_id "${RELEASE_ID}" \
+            --arg deploy_branch "${DEPLOY_BRANCH}" \
+            --arg target_branches "${TARGET_BRANCHES}" \
+            '{
+              ref: $ref,
+              environment: $environment,
+              auto_merge: false,
+              required_contexts: [],
+              transient_environment: true,
+              description: ("branch release " + $release_id),
+              payload: {
+                release_id: ($release_id | tonumber),
+                deploy_branch: $deploy_branch,
+                target_branches: $target_branches
+              }
+            }')"
+          response="$(curl -sS -X POST \
+            -H "Accept: application/vnd.github+json" \
+            -H "Authorization: Bearer ${GITHUB_TOKEN}" \
+            -H "X-GitHub-Api-Version: 2026-03-10" \
+            "${GITHUB_API_URL}/deployments" \
+            -d "${payload}")"
+          deployment_id="$(echo "${response}" | jq -r '.id // empty')"
+          if [ -z "${deployment_id}" ]; then
+            echo "${response}"
+            exit 1
+          fi
+          echo "deployment_id=${deployment_id}" >> "${GITHUB_OUTPUT}"
+
+      - name: Mark branch preparation stages
+        env:
+          DEPLOYMENT_ID: ${{ steps.create_deployment.outputs.deployment_id }}
+        run: |
+          post_status() {
+            local state="$1"
+            local description="$2"
+            local payload
+            payload="$(jq -n --arg state "${state}" --arg description "${description}" '{
+              state: $state,
+              description: $description,
+              log_url: env.GITHUB_SERVER_URL + "/" + env.GITHUB_REPOSITORY + "/actions/runs/" + env.GITHUB_RUN_ID
+            }')"
+            curl -sS -X POST \
+              -H "Accept: application/vnd.github+json" \
+              -H "Authorization: Bearer ${GITHUB_TOKEN}" \
+              -H "X-GitHub-Api-Version: 2026-03-10" \
+              "${GITHUB_API_URL}/deployments/${DEPLOYMENT_ID}/statuses" \
+              -d "${payload}" >/dev/null
+          }
+          post_status "success" "CREATE_DEPLOY_BRANCH|deploy branch created from base branch"
+          post_status "success" "MERGE_FEATURE_BRANCHES|feature branches merged into deploy branch"
+          post_status "in_progress" "DEPLOY_ENVIRONMENT|deploy branch pushed and awaiting environment delivery"
+
+      - name: Mark deployment ready
+        env:
+          DEPLOYMENT_ID: ${{ steps.create_deployment.outputs.deployment_id }}
+        run: |
+          payload="$(jq -n --arg state "success" --arg description "DEPLOY_ENVIRONMENT|deploy branch is ready for downstream deployment" '{
+            state: $state,
+            description: $description,
+            log_url: env.GITHUB_SERVER_URL + "/" + env.GITHUB_REPOSITORY + "/actions/runs/" + env.GITHUB_RUN_ID
+          }')"
+          curl -sS -X POST \
+            -H "Accept: application/vnd.github+json" \
+            -H "Authorization: Bearer ${GITHUB_TOKEN}" \
+            -H "X-GitHub-Api-Version: 2026-03-10" \
+            "${GITHUB_API_URL}/deployments/${DEPLOYMENT_ID}/statuses" \
+            -d "${payload}" >/dev/null
+
+      - name: Mark release finished
+        env:
+          DEPLOYMENT_ID: ${{ steps.create_deployment.outputs.deployment_id }}
+        run: |
+          payload="$(jq -n --arg state "success" --arg description "FINISH|workflow finished successfully" '{
+            state: $state,
+            description: $description,
+            log_url: env.GITHUB_SERVER_URL + "/" + env.GITHUB_REPOSITORY + "/actions/runs/" + env.GITHUB_RUN_ID
+          }')"
+          curl -sS -X POST \
+            -H "Accept: application/vnd.github+json" \
+            -H "Authorization: Bearer ${GITHUB_TOKEN}" \
+            -H "X-GitHub-Api-Version: 2026-03-10" \
+            "${GITHUB_API_URL}/deployments/${DEPLOYMENT_ID}/statuses" \
+            -d "${payload}" >/dev/null
+
+      - name: Mark deployment failed
+        if: ${{ failure() && steps.create_deployment.outputs.deployment_id != '' }}
+        env:
+          DEPLOYMENT_ID: ${{ steps.create_deployment.outputs.deployment_id }}
+        run: |
+          payload="$(jq -n --arg state "failure" --arg description "FINISH|workflow failed" '{
+            state: $state,
+            description: $description,
+            log_url: env.GITHUB_SERVER_URL + "/" + env.GITHUB_REPOSITORY + "/actions/runs/" + env.GITHUB_RUN_ID
+          }')"
+          curl -sS -X POST \
+            -H "Accept: application/vnd.github+json" \
+            -H "Authorization: Bearer ${GITHUB_TOKEN}" \
+            -H "X-GitHub-Api-Version: 2026-03-10" \
+            "${GITHUB_API_URL}/deployments/${DEPLOYMENT_ID}/statuses" \
+            -d "${payload}" >/dev/null
+
+      - name: Release summary
+        env:
+          RELEASE_ID: ${{ inputs.release_id }}
+          ENVIRONMENT: ${{ inputs.environment }}
+          DEPLOY_BRANCH: ${{ inputs.deploy_branch }}
+          TARGET_BRANCHES: ${{ inputs.target_branches }}
+        run: |
+          echo "release_id=${RELEASE_ID}" >> "$GITHUB_STEP_SUMMARY"
+          echo "environment=${ENVIRONMENT}" >> "$GITHUB_STEP_SUMMARY"
+          echo "deploy_branch=${DEPLOY_BRANCH}" >> "$GITHUB_STEP_SUMMARY"
+          echo "target_branches=${TARGET_BRANCHES}" >> "$GITHUB_STEP_SUMMARY"
