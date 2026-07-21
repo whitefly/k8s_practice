@@ -35,7 +35,7 @@ spec:
         - name: hello-service
 
           # 第一次 GitHub Actions 执行后，会自动替换这一行
-          image: ghcr.io/whitefly/k8s_practice:d227a478bb93
+          image: ghcr.io/whitefly/k8s_practice:199803913f31
 
           imagePullPolicy: IfNotPresent
 
