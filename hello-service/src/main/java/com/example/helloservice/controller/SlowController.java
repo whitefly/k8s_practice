@@ -11,7 +11,7 @@ import java.util.Map;
 public class SlowController {
 
 
-    @GetMapping("/hello/e")
+    @GetMapping("/hello/slow")
     public Map<String, String> hello() {
         return response();
     }
