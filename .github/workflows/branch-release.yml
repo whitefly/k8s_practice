@@ -23,7 +23,8 @@ on:
         type: string
       target_branches:
         description: "Comma-separated feature branches"
-        required: true
+        required: false
+        default: ""
         type: string
 
 concurrency:
@@ -64,8 +65,8 @@ jobs:
           DEPLOY_BRANCH: ${{ inputs.deploy_branch }}
         run: |
           if [ -z "${TARGET_BRANCHES}" ]; then
-            echo "target_branches is empty"
-            exit 1
+            echo "No target branches to merge, deploy branch will stay aligned with base branch"
+            exit 0
           fi
 
           IFS=',' read -r -a BRANCH_ARRAY <<< "${TARGET_BRANCHES}"
